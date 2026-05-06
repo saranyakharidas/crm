@@ -32,3 +32,6 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     campaigns = relationship("Campaign", back_populates="owner")
     products = relationship("Product", back_populates="owner")
     price_books = relationship("PriceBook", back_populates="owner")
+    contacts = relationship("Contact", back_populates="owner")
+    deals = relationship("Deal", back_populates="owner")
+    tasks = relationship("Task", back_populates="owner")

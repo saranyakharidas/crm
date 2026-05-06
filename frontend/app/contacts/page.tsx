@@ -2,14 +2,14 @@
 
 import { AppShell } from '@/components/crm/app-shell'
 import { ContactsView } from '@/components/crm/contacts-view'
-import { ActivityProvider } from '@/lib/activity-context'
+import { ContactsProvider } from '@/lib/contacts-context'
 
 export default function ContactsPage() {
   return (
-    <ActivityProvider>
+    <ContactsProvider>
       <AppShell>
         <ContactsView />
       </AppShell>
-    </ActivityProvider>
+    </ContactsProvider>
   )
 }

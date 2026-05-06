@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useCRM } from "@/lib/crm-context"
-import { Task } from "@/lib/types"
+import { useTasks, type Task, type TaskStatus } from "@/lib/tasks-context"
+import { useContacts } from "@/lib/contacts-context"
+import { useDeals } from "@/lib/deals-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -61,15 +62,17 @@ const priorityConfig: Record<Task["priority"], { color: string; icon: React.Reac
   urgent: { color: "text-red-500", icon: <AlertCircle className="h-4 w-4" /> },
 }
 
-const statusConfig: Record<Task["status"], { color: string; label: string }> = {
-  todo: { color: "bg-slate-500/10 text-slate-500 border-slate-500/20", label: "To Do" },
+const statusConfig: Record<TaskStatus, { color: string; label: string }> = {
+  pending: { color: "bg-slate-500/10 text-slate-500 border-slate-500/20", label: "Pending" },
   in_progress: { color: "bg-blue-500/10 text-blue-500 border-blue-500/20", label: "In Progress" },
   completed: { color: "bg-green-500/10 text-green-500 border-green-500/20", label: "Completed" },
-  cancelled: { color: "bg-red-500/10 text-red-500 border-red-500/20", label: "Cancelled" },
+  deferred: { color: "bg-red-500/10 text-red-500 border-red-500/20", label: "Deferred" },
 }
 
 export function TasksView() {
-  const { tasks, addTask, updateTask, deleteTask, contacts, deals } = useCRM()
+  const { tasks, addTask, updateTask, deleteTask, toggleTaskStatus, isLoading, error, refreshTasks } = useTasks()
+  const { contacts } = useContacts()
+  const { deals } = useDeals()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [priorityFilter, setPriorityFilter] = useState<string>("all")
@@ -136,32 +139,26 @@ export function TasksView() {
   }, [tasks])
 
   const handleAddTask = (formData: FormData) => {
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
+    const newTask = {
       title: formData.get("title") as string,
       description: formData.get("description") as string,
-      status: "todo",
+      status: "pending" as TaskStatus,
       priority: formData.get("priority") as Task["priority"],
       dueDate: formData.get("dueDate") as string,
-      assignedTo: "current-user",
-      relatedTo: formData.get("relatedTo") as string || undefined,
-      relatedType: formData.get("relatedType") as "contact" | "deal" | undefined,
-      createdAt: new Date().toISOString(),
+      relatedId: formData.get("relatedTo") as string || null,
+      relatedType: formData.get("relatedType") as "contact" | "deal" | null,
     }
-    addTask(newTask)
-    setIsAddDialogOpen(false)
-    toast.success("Task created successfully")
+    void addTask(newTask).then(() => {
+      setIsAddDialogOpen(false)
+    })
   }
 
   const handleToggleComplete = (task: Task) => {
-    const newStatus = task.status === "completed" ? "todo" : "completed"
-    updateTask({ ...task, status: newStatus })
-    toast.success(newStatus === "completed" ? "Task completed!" : "Task reopened")
+    void toggleTaskStatus(task.id)
   }
 
   const handleDeleteTask = (id: string) => {
-    deleteTask(id)
-    toast.success("Task deleted")
+    void deleteTask(id)
   }
 
   const isOverdue = (dueDate: string) => {
@@ -181,6 +178,9 @@ export function TasksView() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      {isLoading && <div className="p-8 text-center text-muted-foreground">Loading tasks...</div>}
+      {error && <div className="p-8 text-center text-destructive">Error: {error}</div>}
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

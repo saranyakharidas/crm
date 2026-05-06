@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.models import account, campaign, lead, price_book, product, user  # noqa: F401
-from app.routers import accounts, auth, campaigns, dashboard, leads, price_books, products
+from app.models import account, campaign, contact, deal, lead, price_book, product, task, user  # noqa: F401
+from app.routers import accounts, auth, campaigns, contacts, dashboard, deals, leads, price_books, products, tasks
 
 
 @asynccontextmanager
@@ -32,8 +32,11 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(accounts.router)
+app.include_router(contacts.router)
 app.include_router(leads.router)
 app.include_router(campaigns.router)
+app.include_router(deals.router)
+app.include_router(tasks.router)
 app.include_router(products.router)
 app.include_router(price_books.router)
 app.include_router(dashboard.router)

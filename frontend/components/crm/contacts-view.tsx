@@ -1,8 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useCRM } from "@/lib/crm-context"
-import { Contact } from "@/lib/types"
+import { useContacts, type Contact, type ContactStatus } from "@/lib/contacts-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -66,7 +65,7 @@ import {
 import { toast } from "sonner"
 
 export function ContactsView() {
-  const { contacts, addContact, deleteContact } = useCRM()
+  const { contacts, addContact, deleteContact, isLoading, error, refreshContacts } = useContacts()
   const [search, setSearch] = useState("")
   const [companyFilter, setCompanyFilter] = useState<string>("all")
   const [viewMode, setViewMode] = useState<"grid" | "table">("table")
@@ -109,8 +108,7 @@ export function ContactsView() {
     const firstName = nameParts[0] || ''
     const lastName = nameParts.slice(1).join(' ') || ''
     
-    const newContact: Contact = {
-      id: `contact-${Date.now()}`,
+    const newContact = {
       firstName,
       lastName,
       email: formData.get("email") as string,
@@ -119,13 +117,13 @@ export function ContactsView() {
       position: formData.get("position") as string || '',
       notes: formData.get("notes") as string || '',
       tags: ((formData.get("tags") as string) || '').split(",").map((t) => t.trim()).filter(Boolean),
-      createdAt: new Date().toISOString(),
+      status: 'active' as ContactStatus,
       lastContactedAt: new Date().toISOString(),
-      status: 'active',
     }
-    addContact(newContact)
-    setIsAddDialogOpen(false)
-    toast.success("Contact added successfully")
+    
+    void addContact(newContact).then(() => {
+      setIsAddDialogOpen(false)
+    })
   }
 
   const handleDeleteContact = (id: string) => {
@@ -233,6 +231,28 @@ export function ContactsView() {
           </Dialog>
         </div>
       </div>
+
+      {isLoading && (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            Loading contacts from the backend...
+          </CardContent>
+        </Card>
+      )}
+
+      {error && (
+        <Card className="border-destructive/30">
+          <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-destructive">Could not load contacts</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </div>
+            <Button variant="outline" onClick={() => void refreshContacts()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">

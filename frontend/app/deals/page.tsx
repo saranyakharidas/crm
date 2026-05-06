@@ -2,14 +2,14 @@
 
 import { AppShell } from '@/components/crm/app-shell'
 import { DealsKanban } from '@/components/crm/deals-kanban'
-import { ActivityProvider } from '@/lib/activity-context'
+import { DealsProvider } from '@/lib/deals-context'
 
 export default function DealsPage() {
   return (
-    <ActivityProvider>
+    <DealsProvider>
       <AppShell>
         <DealsKanban />
       </AppShell>
-    </ActivityProvider>
+    </DealsProvider>
   )
 }

@@ -74,8 +74,8 @@ import {
 } from '@/components/ui/sheet'
 import { ActivityTimeline } from '@/components/crm/activity-timeline'
 import { cn } from '@/lib/utils'
-import { useCRM } from '@/lib/crm-context'
-import type { Deal, DealStage } from '@/lib/types'
+import { useDeals, type Deal, type DealStage } from '@/lib/deals-context'
+import { useContacts } from '@/lib/contacts-context'
 import { toast } from 'sonner'
 
 const STAGES: { id: DealStage; label: string; color: string }[] = [
@@ -88,7 +88,8 @@ const STAGES: { id: DealStage; label: string; color: string }[] = [
 ]
 
 export function DealsKanban() {
-  const { deals, moveDealStage, addDeal, deleteDeal, contacts } = useCRM()
+  const { deals, moveDealStage, addDeal, deleteDeal, isLoading, error, refreshDeals } = useDeals()
+  const { contacts } = useContacts()
   const [activeDeal, setActiveDeal] = useState<Deal | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [filterStage, setFilterStage] = useState<string>('all')
@@ -104,10 +105,23 @@ export function DealsKanban() {
     useSensor(KeyboardSensor)
   )
 
+  const dealsWithContacts = useMemo(() => {
+    return deals.map(deal => ({
+      ...deal,
+      contact: contacts.find(c => c.id === deal.contactId) || {
+        firstName: 'Unknown',
+        lastName: 'Contact',
+        company: 'Unknown',
+        email: '',
+        phone: '',
+      }
+    }))
+  }, [deals, contacts])
+
   const filteredDeals = useMemo(() => {
-    if (filterStage === 'all') return deals
-    return deals.filter(d => d.stage === filterStage)
-  }, [deals, filterStage])
+    if (filterStage === 'all') return dealsWithContacts
+    return dealsWithContacts.filter(d => d.stage === filterStage)
+  }, [dealsWithContacts, filterStage])
 
   const dealsByStage = useMemo(() => {
     const grouped: Record<DealStage, Deal[]> = {
@@ -127,7 +141,7 @@ export function DealsKanban() {
   }, [filteredDeals])
 
   const handleDragStart = (event: DragStartEvent) => {
-    const deal = deals.find((d) => d.id === event.active.id)
+    const deal = dealsWithContacts.find((d) => d.id === event.active.id)
     if (deal) {
       setActiveDeal(deal)
     }
@@ -162,6 +176,9 @@ export function DealsKanban() {
       .filter(d => d.stage !== 'closed-lost' && d.stage !== 'closed-won')
       .reduce((sum, deal) => sum + (deal.value * deal.probability / 100), 0)
   }, [deals])
+
+  if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading deals...</div>
+  if (error) return <div className="p-8 text-center text-destructive">Error: {error}</div>
 
   return (
     <div className="h-full flex flex-col">
@@ -538,7 +555,6 @@ function AddDealDialog({ open, onOpenChange, contacts, onAdd }: AddDealDialogPro
       stage: formData.stage,
       probability: 10,
       contactId: formData.contactId,
-      contact,
       expectedCloseDate: formData.expectedCloseDate || new Date().toISOString(),
       notes: formData.notes,
     })
