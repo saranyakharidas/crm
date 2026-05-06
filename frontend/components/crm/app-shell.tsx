@@ -88,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { currentUser } = useCRM()
   const [collapsed,   setCollapsed]   = useState(false)
   const [searchOpen,  setSearchOpen]  = useState(false)
-  const [isDarkMode,  setIsDarkMode]  = useState(true)
+  const [isDarkMode,  setIsDarkMode]  = useState(false)
 
   // Find which group contains the active route, fall back to 'Sales'
   const activeGroup = NAV.find(e =>
@@ -269,12 +269,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-2.5 cursor-pointer min-w-0">
                     <Avatar className="h-7 w-7 shrink-0">
-                      <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
+                      <AvatarImage src={currentUser?.avatar} alt={currentUser?.name} />
                       <AvatarFallback className="text-xs">
-                        {currentUser.name.split(' ').map((n: string) => n[0]).join('')}
+                        {currentUser?.name?.split(' ').map((n: string) => n[0]).join('') ?? 'U'}
                       </AvatarFallback>
                     </Avatar>
-                    {!collapsed && (
+                    {!collapsed && currentUser && (
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium text-sidebar-foreground truncate">{currentUser.name}</p>
                         <p className="text-[11px] text-sidebar-foreground/50 truncate">{currentUser.email}</p>
@@ -282,7 +282,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     )}
                   </div>
                 </TooltipTrigger>
-                {collapsed && (
+                {collapsed && currentUser && (
                   <TooltipContent side="right">
                     <p className="font-medium">{currentUser.name}</p>
                     <p className="text-xs text-muted-foreground">{currentUser.email}</p>

@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthGuard } from '@/components/auth/auth-guard'
 import { CRMProvider } from '@/lib/crm-context'
+import { NotificationsProvider } from '@/lib/notifications-context'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
@@ -29,13 +30,15 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="light">
       <body className={`${inter.variable} font-sans antialiased`}>
         <AuthGuard>
-          <CRMProvider>
-            {children}
-            <Toaster position="top-right" richColors />
-          </CRMProvider>
+          <NotificationsProvider>
+            <CRMProvider>
+              {children}
+              <Toaster position="top-right" richColors />
+            </CRMProvider>
+          </NotificationsProvider>
         </AuthGuard>
         <Analytics />
       </body>

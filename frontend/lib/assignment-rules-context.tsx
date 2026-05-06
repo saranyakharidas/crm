@@ -1,16 +1,10 @@
 'use client'
 
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  type ReactNode,
-} from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { toast } from 'sonner'
+import { API_BASE_URL, getStoredAccessToken, clearStoredAccessToken } from './auth'
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
+// --- Types ---
 export type RuleStatus   = 'active' | 'inactive' | 'draft'
 export type CondField    = 'source' | 'score' | 'company' | 'country' | 'industry' | 'position' | 'status'
 export type CondOperator = 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than'
@@ -26,7 +20,7 @@ export interface RuleCondition {
 export interface RuleAction {
   id:    string
   type:  ActionType
-  value: string   // e.g. "Sarah Johnson" | "qualified" | "VIP" | "80"
+  value: string
 }
 
 export interface AssignmentRule {
@@ -34,14 +28,14 @@ export interface AssignmentRule {
   name:        string
   description: string
   status:      RuleStatus
-  priority:    number       // lower = runs first
-  matchAll:    boolean      // true = AND, false = OR
+  priority:    number
+  match_all:   boolean
   conditions:  RuleCondition[]
   actions:     RuleAction[]
-  runCount:    number       // total leads this rule has acted on
-  lastRunAt?:  string
-  createdAt:   string
-  updatedAt:   string
+  run_count:    number
+  last_run_at?:  string
+  created_at:   string
+  updated_at:   string
 }
 
 export interface RuleExecution {
@@ -54,266 +48,124 @@ export interface RuleExecution {
   timestamp:  string
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-const now  = () => new Date().toISOString()
-const d    = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString()
-let   _id  = 1
-const uid  = () => `rc-${_id++}`
-
-function cond(field: CondField, operator: CondOperator, value: string): RuleCondition {
-  return { id: uid(), field, operator, value }
-}
-function action(type: ActionType, value: string): RuleAction {
-  return { id: uid(), type, value }
-}
-
-// ─── Seed rules ────────────────────────────────────────────────────────────────
-export const SEED_RULES: AssignmentRule[] = [
-  {
-    id: 'rule-1',
-    name: 'High-Score Enterprise Leads → Sarah',
-    description: 'Route high-scoring leads from large companies to the senior rep.',
-    status: 'active',
-    priority: 1,
-    matchAll: true,
-    conditions: [
-      cond('score', 'greater_than', '75'),
-      cond('source', 'not_equals', 'cold_call'),
-    ],
-    actions: [
-      action('assign_to', 'Sarah Johnson'),
-      action('set_status', 'qualified'),
-      action('add_tag', 'High Value'),
-    ],
-    runCount: 47,
-    lastRunAt: d(1),
-    createdAt: d(60),
-    updatedAt: d(5),
-  },
-  {
-    id: 'rule-2',
-    name: 'LinkedIn Leads → Michael',
-    description: 'All LinkedIn-sourced leads go directly to Michael for social selling follow-up.',
-    status: 'active',
-    priority: 2,
-    matchAll: false,
-    conditions: [
-      cond('source', 'equals', 'linkedin'),
-    ],
-    actions: [
-      action('assign_to', 'Michael Chen'),
-      action('add_tag', 'LinkedIn'),
-      action('notify', 'Michael Chen'),
-    ],
-    runCount: 83,
-    lastRunAt: d(0),
-    createdAt: d(45),
-    updatedAt: d(10),
-  },
-  {
-    id: 'rule-3',
-    name: 'Low-Score Leads → Nurture',
-    description: 'Leads below 40 score are tagged for nurture sequences instead of direct outreach.',
-    status: 'active',
-    priority: 3,
-    matchAll: true,
-    conditions: [
-      cond('score', 'less_than', '40'),
-      cond('status', 'equals', 'new'),
-    ],
-    actions: [
-      action('add_tag', 'Nurture'),
-      action('set_status', 'contacted'),
-      action('set_score', '35'),
-    ],
-    runCount: 31,
-    lastRunAt: d(2),
-    createdAt: d(40),
-    updatedAt: d(7),
-  },
-  {
-    id: 'rule-4',
-    name: 'Referral Leads → Fast Track',
-    description: 'Referrals are premium leads — fast-track them with high score and VIP tag.',
-    status: 'active',
-    priority: 4,
-    matchAll: false,
-    conditions: [
-      cond('source', 'equals', 'referral'),
-    ],
-    actions: [
-      action('assign_to', 'Sarah Johnson'),
-      action('set_score', '85'),
-      action('add_tag', 'VIP'),
-      action('set_status', 'qualified'),
-    ],
-    runCount: 19,
-    lastRunAt: d(3),
-    createdAt: d(30),
-    updatedAt: d(3),
-  },
-  {
-    id: 'rule-5',
-    name: 'Tech Industry → Specialist Queue',
-    description: 'Technology sector leads routed to the tech-specialist rep.',
-    status: 'inactive',
-    priority: 5,
-    matchAll: true,
-    conditions: [
-      cond('industry', 'equals', 'technology'),
-      cond('score', 'greater_than', '50'),
-    ],
-    actions: [
-      action('assign_to', 'Alex Rivera'),
-      action('add_tag', 'Tech'),
-    ],
-    runCount: 0,
-    createdAt: d(15),
-    updatedAt: d(15),
-  },
-  {
-    id: 'rule-6',
-    name: 'Unqualified Leads → Archive',
-    description: 'Mark leads with very low scores as unqualified after initial contact.',
-    status: 'draft',
-    priority: 6,
-    matchAll: true,
-    conditions: [
-      cond('score', 'less_than', '20'),
-      cond('status', 'equals', 'contacted'),
-    ],
-    actions: [
-      action('set_status', 'unqualified'),
-      action('add_tag', 'Archive'),
-    ],
-    runCount: 0,
-    createdAt: d(5),
-    updatedAt: d(5),
-  },
-]
-
-// ─── Seed execution log ────────────────────────────────────────────────────────
-export const SEED_EXECUTIONS: RuleExecution[] = [
-  { id: 'ex-1', ruleId: 'rule-2', ruleName: 'LinkedIn Leads → Michael',        leadName: 'James Miller',    leadId: 'lead-1', actionsApplied: ['Assigned to Michael Chen', 'Tag added: LinkedIn', 'Notified Michael Chen'], timestamp: d(0) },
-  { id: 'ex-2', ruleId: 'rule-1', ruleName: 'High-Score Enterprise Leads → Sarah', leadName: 'Laura Chen', leadId: 'lead-2', actionsApplied: ['Assigned to Sarah Johnson', 'Status → qualified', 'Tag added: High Value'],  timestamp: d(0) },
-  { id: 'ex-3', ruleId: 'rule-4', ruleName: 'Referral Leads → Fast Track',     leadName: 'David Park',      leadId: 'lead-3', actionsApplied: ['Assigned to Sarah Johnson', 'Score set to 85', 'Tag added: VIP', 'Status → qualified'], timestamp: d(1) },
-  { id: 'ex-4', ruleId: 'rule-3', ruleName: 'Low-Score Leads → Nurture',       leadName: 'Emma Wilson',     leadId: 'lead-4', actionsApplied: ['Tag added: Nurture', 'Status → contacted', 'Score set to 35'],              timestamp: d(1) },
-  { id: 'ex-5', ruleId: 'rule-2', ruleName: 'LinkedIn Leads → Michael',        leadName: 'Carlos Santos',   leadId: 'lead-5', actionsApplied: ['Assigned to Michael Chen', 'Tag added: LinkedIn', 'Notified Michael Chen'], timestamp: d(2) },
-  { id: 'ex-6', ruleId: 'rule-1', ruleName: 'High-Score Enterprise Leads → Sarah', leadName: 'Nina Patel', leadId: 'lead-6', actionsApplied: ['Assigned to Sarah Johnson', 'Status → qualified', 'Tag added: High Value'],  timestamp: d(2) },
-  { id: 'ex-7', ruleId: 'rule-4', ruleName: 'Referral Leads → Fast Track',     leadName: 'Tom Bradley',     leadId: 'lead-7', actionsApplied: ['Assigned to Sarah Johnson', 'Score set to 85', 'Tag added: VIP'],           timestamp: d(3) },
-  { id: 'ex-8', ruleId: 'rule-3', ruleName: 'Low-Score Leads → Nurture',       leadName: 'Aisha Okonkwo',   leadId: 'lead-8', actionsApplied: ['Tag added: Nurture', 'Status → contacted'],                                 timestamp: d(4) },
-]
-
-// ─── Context ───────────────────────────────────────────────────────────────────
 interface AssignmentRulesContextValue {
   rules:       AssignmentRule[]
   executions:  RuleExecution[]
-  addRule:    (r: Omit<AssignmentRule, 'id' | 'createdAt' | 'updatedAt' | 'runCount'>) => void
-  updateRule: (id: string, updates: Partial<AssignmentRule>) => void
-  deleteRule: (id: string) => void
-  duplicateRule: (id: string) => void
-  toggleRule: (id: string) => void
-  reorderRule: (id: string, direction: 'up' | 'down') => void
-  simulateRun: (ruleId: string) => void
+  isLoading:   boolean
+  error:       string | null
+  refreshData: () => Promise<void>
+  addRule:    (r: any) => Promise<void>
+  updateRule: (id: string, updates: any) => Promise<void>
+  deleteRule: (id: string) => Promise<void>
+  toggleRule: (id: string) => Promise<void>
+  simulateRun: (ruleId: string) => Promise<void>
 }
 
 const AssignmentRulesContext = createContext<AssignmentRulesContextValue | null>(null)
 
 export function AssignmentRulesProvider({ children }: { children: ReactNode }) {
-  const [rules,      setRules]      = useState<AssignmentRule[]>(SEED_RULES)
-  const [executions, setExecutions] = useState<RuleExecution[]>(SEED_EXECUTIONS)
+  const [rules, setRules] = useState<AssignmentRule[]>([])
+  const [executions, setExecutions] = useState<RuleExecution[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const addRule = useCallback((r: Omit<AssignmentRule, 'id' | 'createdAt' | 'updatedAt' | 'runCount'>) => {
-    const ts = now()
-    setRules(prev => [...prev, { ...r, id: `rule-${Date.now()}`, runCount: 0, createdAt: ts, updatedAt: ts }])
-    toast.success(`Rule "${r.name}" created`)
-  }, [])
+  const apiRequest = useCallback(async (path: string, options: RequestInit = {}) => {
+    const token = getStoredAccessToken()
+    if (!token) throw new Error('No auth token')
 
-  const updateRule = useCallback((id: string, updates: Partial<AssignmentRule>) => {
-    setRules(prev => prev.map(r => r.id === id ? { ...r, ...updates, updatedAt: now() } : r))
-  }, [])
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    })
 
-  const deleteRule = useCallback((id: string) => {
-    setRules(prev => prev.filter(r => r.id !== id))
-    toast.success('Rule deleted')
-  }, [])
-
-  const duplicateRule = useCallback((id: string) => {
-    setRules(prev => {
-      const src = prev.find(r => r.id === id)
-      if (!src) return prev
-      const ts = now()
-      const copy: AssignmentRule = {
-        ...src,
-        id:       `rule-${Date.now()}`,
-        name:     `${src.name} (copy)`,
-        status:   'draft',
-        runCount: 0,
-        priority: prev.length + 1,
-        createdAt: ts,
-        updatedAt: ts,
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearStoredAccessToken()
+        window.location.assign('/login')
       }
-      toast.success('Rule duplicated')
-      return [...prev, copy]
-    })
+      throw new Error(`API error: ${response.statusText}`)
+    }
+    if (response.status === 204) return null
+    return response.json()
   }, [])
 
-  const toggleRule = useCallback((id: string) => {
-    setRules(prev => prev.map(r => {
-      if (r.id !== id) return r
-      const next = r.status === 'active' ? 'inactive' : 'active'
-      toast.success(`Rule ${next === 'active' ? 'activated' : 'deactivated'}`)
-      return { ...r, status: next, updatedAt: now() }
-    }))
-  }, [])
+  const refreshData = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const data = await apiRequest('/workflows/rules')
+      setRules(data)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [apiRequest])
 
-  const reorderRule = useCallback((id: string, direction: 'up' | 'down') => {
-    setRules(prev => {
-      const sorted = [...prev].sort((a, b) => a.priority - b.priority)
-      const idx = sorted.findIndex(r => r.id === id)
-      const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-      if (swapIdx < 0 || swapIdx >= sorted.length) return prev
-      const a = sorted[idx].priority
-      const b = sorted[swapIdx].priority
-      return prev.map(r => {
-        if (r.id === sorted[idx].id)    return { ...r, priority: b, updatedAt: now() }
-        if (r.id === sorted[swapIdx].id) return { ...r, priority: a, updatedAt: now() }
-        return r
+  useEffect(() => {
+    void refreshData()
+  }, [refreshData])
+
+  const addRule = async (r: any) => {
+    try {
+      const data = await apiRequest('/workflows/rules', {
+        method: 'POST',
+        body: JSON.stringify(r),
       })
-    })
-  }, [])
+      setRules(prev => [...prev, data])
+      toast.success('Rule created')
+    } catch (err: any) {
+      toast.error(err.message)
+    }
+  }
 
-  const simulateRun = useCallback((ruleId: string) => {
-    const rule = rules.find(r => r.id === ruleId)
+  const updateRule = async (id: string, updates: any) => {
+    try {
+      const data = await apiRequest(`/workflows/rules/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      })
+      setRules(prev => prev.map(r => r.id === id ? data : r))
+    } catch (err: any) {
+      toast.error(err.message)
+    }
+  }
+
+  const deleteRule = async (id: string) => {
+    try {
+      await apiRequest(`/workflows/rules/${id}`, { method: 'DELETE' })
+      setRules(prev => prev.filter(r => r.id !== id))
+      toast.success('Rule deleted')
+    } catch (err: any) {
+      toast.error(err.message)
+    }
+  }
+
+  const toggleRule = async (id: string) => {
+    const rule = rules.find(r => r.id === id)
     if (!rule) return
+    const nextStatus = rule.status === 'active' ? 'inactive' : 'active'
+    await updateRule(id, { status: nextStatus })
+    toast.success(`Rule ${nextStatus === 'active' ? 'activated' : 'deactivated'}`)
+  }
 
-    // Simulate matching 2-8 leads
-    const matched = Math.floor(Math.random() * 6) + 2
-    const ts = now()
-
-    setRules(prev => prev.map(r =>
-      r.id === ruleId ? { ...r, runCount: r.runCount + matched, lastRunAt: ts, updatedAt: ts } : r
-    ))
-
-    const newExecs: RuleExecution[] = Array.from({ length: Math.min(matched, 3) }, (_, i) => ({
-      id:       `ex-${Date.now()}-${i}`,
-      ruleId,
-      ruleName: rule.name,
-      leadName: ['Alex Turner', 'Maria Costa', 'Jin Park', 'Priya Singh'][i % 4],
-      leadId:   `lead-sim-${i}`,
-      actionsApplied: rule.actions.map(a => formatAction(a)),
-      timestamp: ts,
-    }))
-
-    setExecutions(prev => [...newExecs, ...prev])
-    toast.success(`Rule executed — ${matched} leads matched`)
-  }, [rules])
+  const simulateRun = async (ruleId: string) => {
+    try {
+      await apiRequest(`/workflows/rules/${ruleId}/simulate`, { method: 'POST' })
+      toast.success('Rule simulation complete')
+      await refreshData()
+    } catch (err: any) {
+      toast.error(err.message)
+    }
+  }
 
   return (
     <AssignmentRulesContext.Provider value={{
-      rules, executions,
-      addRule, updateRule, deleteRule, duplicateRule,
-      toggleRule, reorderRule, simulateRun,
+      rules, executions, isLoading, error, refreshData,
+      addRule, updateRule, deleteRule, toggleRule, simulateRun
     }}>
       {children}
     </AssignmentRulesContext.Provider>
@@ -322,11 +174,10 @@ export function AssignmentRulesProvider({ children }: { children: ReactNode }) {
 
 export function useAssignmentRules() {
   const ctx = useContext(AssignmentRulesContext)
-  if (!ctx) throw new Error('useAssignmentRules must be inside AssignmentRulesProvider')
+  if (!ctx) throw new Error('useAssignmentRules must be used inside AssignmentRulesProvider')
   return ctx
 }
 
-// ─── Helper ────────────────────────────────────────────────────────────────────
 export function formatAction(a: RuleAction): string {
   switch (a.type) {
     case 'assign_to':  return `Assigned to ${a.value}`

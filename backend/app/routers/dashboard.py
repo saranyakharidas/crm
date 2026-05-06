@@ -26,11 +26,16 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 def calculate_change(items: list, now: datetime) -> float:
-    current_start = now - timedelta(days=30)
-    previous_start = now - timedelta(days=60)
+    # Ensure 'now' and 'items' are comparable (naive vs aware)
+    now_naive = now.replace(tzinfo=None) if now.tzinfo else now
+    current_start = now_naive - timedelta(days=30)
+    previous_start = now_naive - timedelta(days=60)
 
-    current_count = sum(1 for item in items if item.created_at >= current_start)
-    previous_count = sum(1 for item in items if previous_start <= item.created_at < current_start)
+    def get_naive(dt: datetime) -> datetime:
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+    current_count = sum(1 for item in items if get_naive(item.created_at) >= current_start)
+    previous_count = sum(1 for item in items if previous_start <= get_naive(item.created_at) < current_start)
 
     if previous_count == 0:
         return 100.0 if current_count > 0 else 0.0
@@ -61,7 +66,13 @@ def month_buckets(count: int) -> list[tuple[str, str]]:
 def group_by_month(items: list, buckets: list[tuple[str, str]]) -> dict[str, int]:
     bucket_map = {key: 0 for key, _label in buckets}
     for item in items:
-      key = item.created_at.astimezone(timezone.utc).strftime("%Y-%m")
+      dt = item.created_at
+      if dt.tzinfo is None:
+          # If naive, assume it's UTC for formatting
+          key = dt.strftime("%Y-%m")
+      else:
+          key = dt.astimezone(timezone.utc).strftime("%Y-%m")
+      
       if key in bucket_map:
           bucket_map[key] += 1
     return bucket_map

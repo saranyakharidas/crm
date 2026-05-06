@@ -1,19 +1,18 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.models import account, campaign, contact, deal, lead, price_book, product, task, user  # noqa: F401
-from app.routers import accounts, auth, campaigns, contacts, dashboard, deals, leads, price_books, products, tasks
-
+from app.models import account, campaign, contact, deal, lead, price_book, product, task, user, notification  # noqa: F401
+from app.routers import (
+    accounts, activities, auth, automation, billing, campaigns, contacts, dashboard, deals, leads,
+    notifications, price_books, products, recurring_tasks, tasks, tickets
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     yield
-
 
 app = FastAPI(
     title=settings.app_name,
@@ -40,7 +39,12 @@ app.include_router(tasks.router)
 app.include_router(products.router)
 app.include_router(price_books.router)
 app.include_router(dashboard.router)
-
+app.include_router(notifications.router)
+app.include_router(billing.router)
+app.include_router(tickets.router)
+app.include_router(automation.router)
+app.include_router(recurring_tasks.router)
+app.include_router(activities.router)
 
 @app.get("/health", tags=["health"])
 def health_check() -> dict[str, str]:

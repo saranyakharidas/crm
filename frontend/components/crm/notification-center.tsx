@@ -21,8 +21,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { useCRM } from '@/lib/crm-context'
-import type { Notification } from '@/lib/types'
+import { useNotifications } from '@/lib/notifications-context'
+import type { Notification } from '@/lib/notifications-context'
 
 const typeIcons = {
   info: Info,
@@ -40,9 +40,7 @@ const typeColors = {
 
 export function NotificationCenter() {
   const [open, setOpen] = useState(false)
-  const { notifications, markNotificationRead, markAllNotificationsRead, deleteNotification } = useCRM()
-
-  const unreadCount = notifications.filter(n => !n.read).length
+  const { notifications, unreadCount, markNotificationRead, markAllNotificationsRead, deleteNotification } = useNotifications()
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.read) {

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type {
   Contact,
   Lead,
@@ -8,7 +8,6 @@ import type {
   Ticket,
   Task,
   CalendarEvent,
-  Notification,
   AIInsight,
   DealStage,
 } from './types'
@@ -19,12 +18,14 @@ import {
   tickets as initialTickets,
   tasks as initialTasks,
   calendarEvents as initialEvents,
-  notifications as initialNotifications,
   aiInsights as initialInsights,
   currentUser,
   teamMembers,
   dashboardStats,
 } from './mock-data'
+import { getStoredAccessToken } from './auth'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
 interface CRMContextType {
   // Data
@@ -34,9 +35,6 @@ interface CRMContextType {
   tickets: Ticket[]
   tasks: Task[]
   events: CalendarEvent[]
-  notifications: Notification[]
-  insights: AIInsight[]
-  currentUser: typeof currentUser
   teamMembers: typeof teamMembers
   dashboardStats: typeof dashboardStats
 
@@ -58,9 +56,9 @@ interface CRMContextType {
   moveDealStage: (dealId: string, newStage: DealStage) => void
 
   // Ticket Actions
-  addTicket: (ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'messages'>) => void
-  updateTicket: (id: string, updates: Partial<Ticket>) => void
-  deleteTicket: (id: string) => void
+  addTicket: (ticket: any) => Promise<void>
+  updateTicket: (id: string, updates: any) => Promise<void>
+  deleteTicket: (id: string) => Promise<void>
 
   // Task Actions
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void
@@ -73,13 +71,10 @@ interface CRMContextType {
   updateEvent: (id: string, updates: Partial<CalendarEvent>) => void
   deleteEvent: (id: string) => void
 
-  // Notification Actions
-  markNotificationRead: (id: string) => void
-  markAllNotificationsRead: () => void
-  deleteNotification: (id: string) => void
-
   // Search
   searchAll: (query: string) => SearchResults
+
+  currentUser: typeof currentUser
 }
 
 interface SearchResults {
@@ -99,11 +94,47 @@ export function CRMProvider({ children }: { children: ReactNode }) {
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications)
   const [insights] = useState<AIInsight[]>(initialInsights)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Generate unique ID
   const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+  // API helper
+  const apiRequest = useCallback(async (path: string, options: RequestInit = {}) => {
+    const token = getStoredAccessToken()
+    if (!token) return null
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    })
+
+    if (!response.ok) return null
+    if (response.status === 204) return null
+    return response.json()
+  }, [])
+
+  const refreshTickets = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const data = await apiRequest('/tickets')
+      if (data) setTickets(data)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [apiRequest])
+
+  useEffect(() => {
+    void refreshTickets()
+  }, [refreshTickets])
 
   // Contact Actions
   const addContact = useCallback((contact: Omit<Contact, 'id' | 'createdAt'>) => {
@@ -214,25 +245,38 @@ export function CRMProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // Ticket Actions
-  const addTicket = useCallback((ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'messages'>) => {
-    const now = new Date().toISOString()
-    const newTicket: Ticket = {
-      ...ticket,
-      id: generateId('ticket'),
-      messages: [],
-      createdAt: now,
-      updatedAt: now,
+  const addTicket = useCallback(async (ticket: any) => {
+    try {
+      const data = await apiRequest('/tickets', {
+        method: 'POST',
+        body: JSON.stringify(ticket),
+      })
+      if (data) setTickets(prev => [data, ...prev])
+    } catch (err: any) {
+      setError(err.message)
     }
-    setTickets(prev => [newTicket, ...prev])
-  }, [])
+  }, [apiRequest])
 
-  const updateTicket = useCallback((id: string, updates: Partial<Ticket>) => {
-    setTickets(prev => prev.map(t => t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t))
-  }, [])
+  const updateTicket = useCallback(async (id: string, updates: any) => {
+    try {
+      const data = await apiRequest(`/tickets/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      })
+      if (data) setTickets(prev => prev.map(t => t.id === id ? data : t))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }, [apiRequest])
 
-  const deleteTicket = useCallback((id: string) => {
-    setTickets(prev => prev.filter(t => t.id !== id))
-  }, [])
+  const deleteTicket = useCallback(async (id: string) => {
+    try {
+      await apiRequest(`/tickets/${id}`, { method: 'DELETE' })
+      setTickets(prev => prev.filter(t => t.id !== id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }, [apiRequest])
 
   // Task Actions
   const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt'>) => {
@@ -279,19 +323,6 @@ export function CRMProvider({ children }: { children: ReactNode }) {
     setEvents(prev => prev.filter(e => e.id !== id))
   }, [])
 
-  // Notification Actions
-  const markNotificationRead = useCallback((id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
-  }, [])
-
-  const markAllNotificationsRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-  }, [])
-
-  const deleteNotification = useCallback((id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id))
-  }, [])
-
   // Search
   const searchAll = useCallback((query: string): SearchResults => {
     const q = query.toLowerCase()
@@ -330,9 +361,6 @@ export function CRMProvider({ children }: { children: ReactNode }) {
     tickets,
     tasks,
     events,
-    notifications,
-    insights,
-    currentUser,
     teamMembers,
     dashboardStats,
     addContact,
@@ -356,10 +384,8 @@ export function CRMProvider({ children }: { children: ReactNode }) {
     addEvent,
     updateEvent,
     deleteEvent,
-    markNotificationRead,
-    markAllNotificationsRead,
-    deleteNotification,
     searchAll,
+    currentUser,
   }
 
   return <CRMContext.Provider value={value}>{children}</CRMContext.Provider>
